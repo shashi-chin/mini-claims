@@ -1,0 +1,5 @@
+# Needs a Buildkite agent. GitHub Actions is the default CI until an agent exists.
+# This file is ready to hook later; it is not connected to Buildkite today.
+steps:
+  - label: ":maven: test"
+    command: "./mvnw -B test"
