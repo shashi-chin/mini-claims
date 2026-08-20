@@ -1,5 +1,9 @@
-# Needs a Buildkite agent. GitHub Actions is the default CI until an agent exists.
-# This file is ready to hook later; it is not connected to Buildkite today.
+# GitHub Actions is also CI. This pipeline runs on Buildkite hosted linux-small.
+# Hosted image has Docker but not JDK 17, so tests run in Temurin 17.
 steps:
   - label: ":maven: test"
     command: "./mvnw -B test"
+    plugins:
+      - docker#v5.13.0:
+          image: "eclipse-temurin:17-jdk"
+          propagate-uid-gid: true
