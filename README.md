@@ -4,7 +4,100 @@ Week 1 Java 17 mini-claims API for a Texas / Guidewire-prep plan. It is shaped l
 
 Author: Shashi Chin (`au.com.shashichin`).
 
-Tonight’s done bar: repo + OpenAPI + tests for `POST /claims` (failing then passing). In-memory store only. No AWS yet.
+Tonight's done bar: repo + OpenAPI + tests for `POST /claims` (failing then passing). In-memory store only. No AWS yet.
+
+## Architecture
+
+The API is a single Spring Boot 3.4 service exposing a REST interface for claims intake. Storage is in-memory for now.
+
+```mermaid
+flowchart LR
+    subgraph Client
+        C[HTTP Client]
+    end
+
+    subgraph Spring Boot API
+        CTRL[ClaimController]
+        SVC[ClaimService]
+        subgraph In-Memory Store
+            IK[(byIdempotencyKey)]
+            ID[(byId)]
+        end
+    end
+
+    C -->|POST /claims<br>GET /claims/id| CTRL
+    CTRL --> SVC
+    SVC --> IK
+    SVC --> ID
+    SVC -->|Claim JSON| CTRL
+    CTRL -->|Response| C
+```
+
+**Packages:**
+- `au.com.shashichin.miniclaims` — main app entry point
+- `au.com.shashichin.miniclaims.claim` — controller, service, domain records, exceptions
+- `au.com.shashichin.miniclaims.error` — global exception handler and `ApiError` response
+
+### Request Flow: POST /claims
+
+Every `POST /claims` requires an `Idempotency-Key` header. The service checks the key against a stored map to decide whether this is a new request, a replay, or a conflict.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant CTRL as ClaimController
+    participant SVC as ClaimService
+    participant STORE as In-Memory Maps
+
+    C->>CTRL: POST /claims + Idempotency-Key + body
+    CTRL->>SVC: create(idempotencyKey, request)
+
+    alt Key missing or blank
+        SVC-->>CTRL: MissingIdempotencyKeyException
+        CTRL-->>C: 400 Bad Request
+    else Key exists, body matches
+        SVC->>STORE: lookup byIdempotencyKey
+        STORE-->>SVC: existing claim
+        SVC-->>CTRL: CreateClaimResult(claim, replay=true)
+        CTRL-->>C: 200 OK + existing claim
+    else Key exists, body differs
+        SVC->>STORE: lookup byIdempotencyKey
+        STORE-->>SVC: stored request differs
+        SVC-->>CTRL: IdempotencyConflictException
+        CTRL-->>C: 409 Conflict
+    else New key
+        SVC->>STORE: store in byIdempotencyKey & byId
+        SVC-->>CTRL: CreateClaimResult(claim, replay=false)
+        CTRL-->>C: 201 Created + new claim
+    end
+```
+
+### CI Pipeline
+
+Tests run on every push and pull request via GitHub Actions. A Buildkite pipeline is also defined and ready to run when an agent is connected.
+
+```mermaid
+flowchart TB
+    subgraph Trigger
+        PUSH[git push / PR]
+    end
+
+    subgraph GitHub Actions
+        GHA[ubuntu-latest<br>Java 17 Temurin]
+        GHA_TEST["./mvnw -B test"]
+    end
+
+    subgraph Buildkite
+        BK[linux-small agent]
+        BK_DOCKER[eclipse-temurin:17-jdk container]
+        BK_TEST["./mvnw -B test"]
+    end
+
+    PUSH --> GHA
+    GHA --> GHA_TEST
+    PUSH -.->|when agent connected| BK
+    BK --> BK_DOCKER --> BK_TEST
+```
 
 ## Run
 
